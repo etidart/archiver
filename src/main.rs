@@ -18,6 +18,8 @@
 
 mod dirbuster;
 mod common;
+mod optimizer_ui;
+mod optimizer;
 
 use std::{
     io,
@@ -58,7 +60,11 @@ fn main() -> Result<()> {
 
     let dir_actions = get_choise(&mut terminal, &work_dir)?;
 
-    // check the dir for jpg jpeg png files and if any of them are included in the archive prompt the user if he wants to optimize them
+    if optimizer_ui::user_wants_optimization(&mut terminal, &work_dir, &dir_actions) {
+        todo!(); // optimize
+    }
+
+    todo!(); // pack everything
 
     disable_raw_mode()?;
     execute!(

@@ -18,6 +18,8 @@
 
 use serde::{Serialize, Deserialize};
 
+pub const OPTIMIZABLE_EXTS: [&str; 3] = ["jpeg", "jpg", "png"];
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ArchiveOption {
     Exclude,

@@ -515,6 +515,7 @@ pub fn get_choise(terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>
                     std::process::exit(0);
                 },
                 KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    app.overrides.save_to_disk();
                     app.should_quit = true;
                 },
                 KeyCode::Tab => {

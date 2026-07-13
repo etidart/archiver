@@ -16,9 +16,18 @@
  * archiver. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{fs, io, path::{Path, PathBuf}};
+use std::{fs, io::{self, Write}, path::{Path, PathBuf}, process::{ChildStdout, Command, Stdio}, thread, sync::Arc};
 
-use crate::{common::{ArchiveOption, OPTIMIZABLE_EXTS}, dirbuster::ChosenOptions};
+use anyhow::{Context, Result};
+use image::{DynamicImage::{self, ImageRgba16}, GenericImage, ImageBuffer, imageops::{FilterType, grayscale, resize, rotate90}};
+use kdtree::{KdTree, distance::squared_euclidean};
+use rand::distr::{Alphanumeric, SampleString};
+use base64::{Engine, prelude::BASE64_STANDARD};
+
+use crate::{byte_channel::{self, byte_channel}, common::{ArchiveOption, OPTIMIZABLE_EXTS}, dirbuster::ChosenOptions};
+
+const FEATURE_DIM: u32 = 32;
+const FEATURE_LEN: usize = (FEATURE_DIM * FEATURE_DIM) as usize;
 
 fn find_all_optimizable(choise: &ChosenOptions, root: &Path) -> Vec<PathBuf> {
     let mut res = Vec::new();
@@ -49,4 +58,268 @@ fn find_all_optimizable(choise: &ChosenOptions, root: &Path) -> Vec<PathBuf> {
     }
     let _ = walk(root, choise, &mut res);
     res
+}
+
+struct ImageData {
+    path: PathBuf,
+    res: (u32, u32),
+    rotate: bool,
+}
+
+fn get_feature_vec_and_data(path: PathBuf) -> Result<(Vec<f64>, ImageData)> {
+    let img = image::open(&path).context("failed to open and read image")?.to_rgba16();
+    let rotate = img.width() < img.height();
+    let img = if rotate { rotate90(&img) } else { img };
+    let res = (img.width(), img.height());
+    let gray = grayscale(&img);
+    let small = resize(&gray, FEATURE_DIM, FEATURE_DIM, FilterType::Lanczos3);
+    let mut vec = Vec::with_capacity(FEATURE_LEN);
+    for y in 0..FEATURE_DIM {
+        for x in 0..FEATURE_DIM {
+            let pixel = small.get_pixel(x, y).0[0];
+            vec.push(pixel as f64 / 255.0);
+        }
+    }
+    Ok((vec, ImageData { path, res, rotate }))
+}
+
+fn retrieve_data_and_sort(paths: Vec<PathBuf>) -> Vec<ImageData> {
+    let mut feature_vecs = Vec::with_capacity(paths.len());
+    let mut paths_with_data = Vec::with_capacity(paths.len());
+    for path in paths.into_iter() {
+        if let Ok(res) = get_feature_vec_and_data(path) {
+            feature_vecs.push(res.0);
+            paths_with_data.push(Some(res.1));
+        }
+    }
+    let n = feature_vecs.len();
+
+    let mut kdtree = KdTree::new(FEATURE_LEN);
+    for (i, feat) in feature_vecs.iter().enumerate() {
+        let arr: [f64; FEATURE_LEN] = feat.clone().try_into().unwrap();
+        kdtree.add(arr, i).unwrap();
+    }
+
+    let mut visited = vec![false; n];
+    let mut sequence = Vec::with_capacity(n);
+
+    let mut current = 0usize;
+    visited[current] = true;
+    sequence.push(current);
+
+    for _ in 1..n {
+        let last_feat: [f64; FEATURE_LEN] = feature_vecs[current].clone().try_into().unwrap();
+        let neighbors = kdtree.nearest(&last_feat, 20, &squared_euclidean).unwrap();
+        let mut next = None;
+        for (_, idx) in neighbors {
+            if !visited[*idx] {
+                next = Some(*idx);
+                break;
+            }
+        }
+
+        let next = next.unwrap_or_else(|| {
+            (0..n).find(|&i| !visited[i]).unwrap()
+        });
+        visited[next] = true;
+        sequence.push(next);
+        current = next;
+    }
+
+    assert_eq!(sequence.len(), paths_with_data.len());
+
+    let mut sorted_paths_with_data = Vec::with_capacity(sequence.len());
+    for i in sequence {
+        sorted_paths_with_data.push(paths_with_data[i].take().unwrap());
+    }
+
+    sorted_paths_with_data
+}
+
+fn get_random_filepath() -> PathBuf {
+    let mut rand_str = Alphanumeric.sample_string(&mut rand::rng(), 16);
+    let mut path = std::env::temp_dir().join(rand_str + ".mie");
+    while path.exists() {
+        rand_str = Alphanumeric.sample_string(&mut rand::rng(), 16);
+        path = std::env::temp_dir().join(rand_str + ".mie");
+    }
+    path
+}
+
+fn retrieve_exif_data(path: &Path) -> String {
+    let tmp_path = get_random_filepath();
+    let status = Command::new("exiftool")
+        .arg("-TagsFromFile").arg(path)
+        .arg("-all:all").arg(&tmp_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let res = match status {
+        Ok(s) if s.success() => {
+            match fs::read(&tmp_path) {
+                Ok(data) => BASE64_STANDARD.encode(data),
+                _ => String::new()
+            }
+        }
+        _ => String::new()
+    };
+    let _ = fs::remove_file(tmp_path);
+    res
+}
+
+fn collect_metadata_and_write(items: Arc<Vec<ImageData>>, writer: byte_channel::Writer) {
+    let mut wrt = csv::Writer::from_writer(writer);
+
+    wrt.write_record(&[
+        "filename",
+        "resolution",
+        "rotated",
+        "mode",
+        "owner_uid",
+        "owner_gid",
+        "mtime",
+        "exif_metadata",
+    ]).unwrap();
+
+    for data in &*items {
+        let meta = fs::metadata(&data.path).ok();
+        let mode = meta
+            .as_ref()
+            .and_then(|m| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    Some(m.permissions().mode())
+                }
+                #[cfg(not(unix))]
+                {
+                    None
+                }
+            })
+            .map(|perm| format!("{:o}", perm))
+            .unwrap_or_default();
+        let uid = meta
+            .as_ref()
+            .and_then(|m| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    Some(m.uid())
+                }
+                #[cfg(not(unix))]
+                {
+                    None
+                }
+            })
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        let gid = meta
+            .as_ref()
+            .and_then(|m| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    Some(m.gid())
+                }
+                #[cfg(not(unix))]
+                {
+                    None
+                }
+            })
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        let mtime = meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs().to_string())
+            .unwrap_or_default();
+        let exif_b64 = retrieve_exif_data(&data.path);
+
+        wrt.write_record(&[
+            data.path.to_string_lossy().to_string(),
+            format!("{}x{}", data.res.0, data.res.1),
+            if data.rotate { "1" } else { "" }.to_string(),
+            mode,
+            uid,
+            gid,
+            mtime,
+            exif_b64,
+        ]).unwrap();
+    }
+    wrt.flush().unwrap();
+}
+
+fn launch_ffmpeg(paths_with_data: Arc<Vec<ImageData>>) -> Result<ChildStdout> {
+    let mut max_w = 0u32;
+    let mut max_h = 0u32;
+    for data in &*paths_with_data {
+        max_w = max_w.max(data.res.0);
+        max_h = max_h.max(data.res.1);
+    }
+
+    let mut ffmpeg = Command::new("ffmpeg")
+        .args([
+            "-y", "-f", "image2pipe", "-vcodec", "png", "-i", "-",
+            "-c:v", "libx265", "-crf", "0",
+            "-preset", "veryfast", "-pix_fmt", "yuv444p",
+            "-color_range", "full", "-f", "matroska", "pipe:1"
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("failed to spawn ffmpeg")?;
+
+    let mut stdin = ffmpeg.stdin.take().unwrap();
+    let stdout = ffmpeg.stdout.take().unwrap();
+
+    std::thread::spawn(move || {
+        for data in &*paths_with_data {
+            if let Ok(img) = image::open(&data.path) {
+                let img = img.to_rgba16();
+                let img = if data.rotate { rotate90(&img) } else { img };
+                let mut canvas = ImageBuffer::new(max_w, max_h);
+                for y in 0..img.height() {
+                    for x in 0..img.width() {
+                        let pixel = *img.get_pixel(x, y);
+                        canvas.put_pixel(x, y, pixel);
+                    }
+                }
+                let mut png_bytes: Vec<u8> = Vec::new();
+                canvas.write_to(&mut io::Cursor::new(&mut png_bytes), image::ImageFormat::Png).unwrap();
+                stdin.write_all(&png_bytes).unwrap();
+            }
+        }
+        let _ = ffmpeg.wait();
+    });
+
+    Ok(stdout)
+}
+
+pub struct OptimizerOutput {
+    pub ffmpeg: ChildStdout,
+    pub csv: byte_channel::Reader,
+}
+
+pub fn optimize_images(root_dir: &Path, choise: &ChosenOptions) -> Result<OptimizerOutput> {
+    let image_files = find_all_optimizable(choise, root_dir);
+    if image_files.len() == 0 {
+        anyhow::bail!("no image files found")
+    }
+
+    let image_files = retrieve_data_and_sort(image_files);
+    if image_files.len() == 0 {
+        anyhow::bail!("no valid image files found")
+    }
+
+    let image_files = Arc::new(image_files);
+    let md_image_files = Arc::clone(&image_files);
+
+    let (wrt, rd) = byte_channel(65536);
+    thread::spawn(move || collect_metadata_and_write(md_image_files, wrt));
+
+    let ffmpeg = launch_ffmpeg(image_files)?;
+
+    Ok(OptimizerOutput { ffmpeg, csv: rd })
 }

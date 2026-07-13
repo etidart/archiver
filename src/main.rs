@@ -20,6 +20,7 @@ mod dirbuster;
 mod common;
 mod optimizer_ui;
 mod optimizer;
+mod byte_channel;
 
 use std::{
     io,

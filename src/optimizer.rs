@@ -239,7 +239,7 @@ fn collect_metadata_and_write(items: Arc<Vec<ImageData>>, sender: mpsc::Sender<V
         let exif_b64 = retrieve_exif_data(&data.path);
 
         wrt.write_record(&[
-            data.path.to_string_lossy().to_string(),
+            data.path.strip_prefix(root).unwrap_or(&data.path).to_string_lossy().to_string(),
             format!("{}x{}", data.res.0, data.res.1),
             if data.rotate { "1" } else { "" }.to_string(),
             mode,

@@ -20,11 +20,9 @@ mod dirbuster;
 mod common;
 mod optimizer_ui;
 mod optimizer;
+mod archiver;
 
-use std::{
-    io,
-    path::PathBuf,
-};
+use std::{io, path::PathBuf};
 
 use anyhow::Result;
 use clap::Parser;
@@ -43,7 +41,8 @@ use crate::dirbuster::get_choise;
 #[derive(Debug, clap::Parser)]
 struct Args {
     #[arg(default_value = ".")]
-    work_dir: PathBuf
+    work_dir: PathBuf,
+    output_file: PathBuf,
 }
 
 fn main() -> Result<()> {
@@ -60,9 +59,13 @@ fn main() -> Result<()> {
 
     let dir_actions = get_choise(&mut terminal, &work_dir)?;
 
-    if optimizer_ui::user_wants_optimization(&mut terminal, &work_dir, &dir_actions) {
-        todo!(); // optimize
-    }
+    let opt_res = if optimizer_ui::user_wants_optimization(&mut terminal, &work_dir, &dir_actions) {
+        optimizer::optimize_images(&work_dir, &dir_actions).ok()
+    } else {
+        None
+    };
+
+    //
 
     todo!(); // pack everything
 

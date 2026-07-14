@@ -16,7 +16,7 @@
  * archiver. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{fs, io::{self, Write}, path::{Path, PathBuf}, process::{ChildStdout, Command, Stdio}, thread, sync::{Arc, mpsc}};
+use std::{collections::HashSet, fs, io::{self, Write}, path::{Path, PathBuf}, process::{ChildStdout, Command, Stdio}, thread, sync::{Arc, mpsc}};
 
 use anyhow::{Context, Result};
 use image::{ImageBuffer, imageops::{FilterType, grayscale, resize, rotate90}};
@@ -304,6 +304,7 @@ fn launch_ffmpeg(paths_with_data: Arc<Vec<ImageData>>) -> Result<ChildStdout> {
 pub struct OptimizerOutput {
     pub ffmpeg: ChildStdout,
     pub csv: mpsc::Receiver<Vec<u8>>,
+    pub files: HashSet<PathBuf>,
 }
 
 pub fn optimize_images(root_dir: &Path, choise: &ChosenOptions) -> Result<OptimizerOutput> {
@@ -317,6 +318,9 @@ pub fn optimize_images(root_dir: &Path, choise: &ChosenOptions) -> Result<Optimi
         anyhow::bail!("no valid image files found")
     }
 
+    let mut files = HashSet::new();
+    image_files.iter().map(|d| &d.path).for_each(|p| { files.insert(p.clone()); });
+
     let image_files = Arc::new(image_files);
     let md_image_files = Arc::clone(&image_files);
 
@@ -326,5 +330,5 @@ pub fn optimize_images(root_dir: &Path, choise: &ChosenOptions) -> Result<Optimi
 
     let ffmpeg = launch_ffmpeg(image_files)?;
 
-    Ok(OptimizerOutput { ffmpeg, csv: rd })
+    Ok(OptimizerOutput { ffmpeg, csv: rd, files })
 }

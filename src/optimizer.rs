@@ -16,15 +16,15 @@
  * archiver. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{fs, io::{self, Write}, path::{Path, PathBuf}, process::{ChildStdout, Command, Stdio}, thread, sync::Arc};
+use std::{fs, io::{self, Write}, path::{Path, PathBuf}, process::{ChildStdout, Command, Stdio}, thread, sync::{Arc, mpsc}};
 
 use anyhow::{Context, Result};
-use image::{DynamicImage::{self, ImageRgba16}, GenericImage, ImageBuffer, imageops::{FilterType, grayscale, resize, rotate90}};
+use image::{ImageBuffer, imageops::{FilterType, grayscale, resize, rotate90}};
 use kdtree::{KdTree, distance::squared_euclidean};
 use rand::distr::{Alphanumeric, SampleString};
 use base64::{Engine, prelude::BASE64_STANDARD};
 
-use crate::{byte_channel::{self, byte_channel}, common::{ArchiveOption, OPTIMIZABLE_EXTS}, dirbuster::ChosenOptions};
+use crate::{common::{ArchiveOption, OPTIMIZABLE_EXTS}, dirbuster::ChosenOptions};
 
 const FEATURE_DIM: u32 = 32;
 const FEATURE_LEN: usize = (FEATURE_DIM * FEATURE_DIM) as usize;
@@ -167,7 +167,9 @@ fn retrieve_exif_data(path: &Path) -> String {
     res
 }
 
-fn collect_metadata_and_write(items: Arc<Vec<ImageData>>, writer: byte_channel::Writer) {
+fn collect_metadata_and_write(items: Arc<Vec<ImageData>>, sender: mpsc::Sender<Vec<u8>>, root: &Path) {
+    let mut vec = Vec::new();
+    let writer = io::Cursor::new(&mut vec);
     let mut wrt = csv::Writer::from_writer(writer);
 
     wrt.write_record(&[
@@ -248,6 +250,8 @@ fn collect_metadata_and_write(items: Arc<Vec<ImageData>>, writer: byte_channel::
         ]).unwrap();
     }
     wrt.flush().unwrap();
+    drop(wrt);
+    let _ = sender.send(vec);
 }
 
 fn launch_ffmpeg(paths_with_data: Arc<Vec<ImageData>>) -> Result<ChildStdout> {
@@ -299,7 +303,7 @@ fn launch_ffmpeg(paths_with_data: Arc<Vec<ImageData>>) -> Result<ChildStdout> {
 
 pub struct OptimizerOutput {
     pub ffmpeg: ChildStdout,
-    pub csv: byte_channel::Reader,
+    pub csv: mpsc::Receiver<Vec<u8>>,
 }
 
 pub fn optimize_images(root_dir: &Path, choise: &ChosenOptions) -> Result<OptimizerOutput> {
@@ -316,8 +320,9 @@ pub fn optimize_images(root_dir: &Path, choise: &ChosenOptions) -> Result<Optimi
     let image_files = Arc::new(image_files);
     let md_image_files = Arc::clone(&image_files);
 
-    let (wrt, rd) = byte_channel(65536);
-    thread::spawn(move || collect_metadata_and_write(md_image_files, wrt));
+    let (wrt, rd) = mpsc::channel();
+    let root_owned = root_dir.to_path_buf();
+    thread::spawn(move || collect_metadata_and_write(md_image_files, wrt, &root_owned));
 
     let ffmpeg = launch_ffmpeg(image_files)?;
 

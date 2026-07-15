@@ -94,7 +94,7 @@ fn get_xz_encoder<T: io::Write>(output: T) -> XzEncoder<T> {
     XzEncoder::new_stream(output, stream)
 }
 
-fn create_archive(arch_path: &Path, root_dir: &Path, choise: ChosenOptions, optimized: Option<OptimizerOutput>) -> Result<()> {
+pub fn create_archive(arch_path: &Path, root_dir: &Path, choise: ChosenOptions, optimized: Option<OptimizerOutput>) -> Result<()> {
     let (uncompr, compr) = get_lists_of_files(root_dir, choise, &optimized.as_ref().map(|f| &f.files));
 
     let arch_file = OpenOptions::new().create(true).read(true).write(true).open(arch_path).context("failed to open the output file")?;

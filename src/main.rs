@@ -22,21 +22,12 @@ mod optimizer_ui;
 mod optimizer;
 mod archiver;
 
-use std::{io, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
 
-use crate::dirbuster::get_choise;
+use crate::{archiver::create_archive, dirbuster::get_choise};
 
 #[derive(Debug, clap::Parser)]
 struct Args {
@@ -64,9 +55,7 @@ fn main() -> Result<()> {
         None
     };
 
-    //
-
-    todo!(); // pack everything
+    create_archive(&args.output_file, &work_dir, dir_actions, opt_res)?;
 
     Ok(())
 }

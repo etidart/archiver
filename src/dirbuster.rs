@@ -126,7 +126,21 @@ pub struct ChosenOptions {
 
 impl ChosenOptions {
     pub fn effective_option(&self, path: &Path) -> ArchiveOption {
-        let mut p = Some(path);
+        // first check the direct file path
+        if let Some(&opt) = self.map_paths.get(path) {
+            return opt;
+        }
+
+        // then check extension
+        if let Some(ext) = path.extension() {
+            let ext_lower = ext.to_string_lossy().to_lowercase();
+            if let Some(&opt) = self.map_exts.get(&ext_lower) {
+                return opt;
+            }
+        }
+
+        // then check parents
+        let mut p = path.parent();
         while let Some(curr) = p {
             if let Some(&opt) = self.map_paths.get(curr) {
                 return opt;
@@ -136,12 +150,8 @@ impl ChosenOptions {
             }
             p = curr.parent();
         }
-        if let Some(ext) = path.extension() {
-            let ext_lower = ext.to_string_lossy().to_lowercase();
-            if let Some(&opt) = self.map_exts.get(&ext_lower) {
-                return opt;
-            }
-        }
+
+        // then use the default
         ArchiveOption::default()
     }
 

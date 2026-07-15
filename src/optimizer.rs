@@ -198,7 +198,7 @@ fn collect_metadata_and_write(items: Arc<Vec<ImageData>>, sender: mpsc::Sender<V
                     None
                 }
             })
-            .map(|perm| format!("{:o}", perm))
+            .map(|perm: u32| format!("{:o}", perm))
             .unwrap_or_default();
         let uid = meta
             .as_ref()
@@ -213,7 +213,7 @@ fn collect_metadata_and_write(items: Arc<Vec<ImageData>>, sender: mpsc::Sender<V
                     None
                 }
             })
-            .map(|id| id.to_string())
+            .map(|id: u32| id.to_string())
             .unwrap_or_default();
         let gid = meta
             .as_ref()
@@ -228,7 +228,7 @@ fn collect_metadata_and_write(items: Arc<Vec<ImageData>>, sender: mpsc::Sender<V
                     None
                 }
             })
-            .map(|id| id.to_string())
+            .map(|id: u32| id.to_string())
             .unwrap_or_default();
         let mtime = meta
             .as_ref()

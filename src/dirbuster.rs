@@ -23,11 +23,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers, DisableMouseCapture},
-    terminal::{LeaveAlternateScreen, disable_raw_mode},
-    execute,
-};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
     backend::CrosstermBackend,
@@ -493,24 +489,12 @@ pub fn get_choise(terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Char('q') => {
-                    disable_raw_mode()?;
-                    execute!(
-                        terminal.backend_mut(),
-                        LeaveAlternateScreen,
-                        DisableMouseCapture
-                    )?;
-                    terminal.show_cursor()?;
+                    ratatui::restore();
                     app.overrides.save_to_disk();
                     std::process::exit(0);
                 },
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    disable_raw_mode()?;
-                    execute!(
-                        terminal.backend_mut(),
-                        LeaveAlternateScreen,
-                        DisableMouseCapture
-                    )?;
-                    terminal.show_cursor()?;
+                    ratatui::restore();
                     app.overrides.save_to_disk();
                     std::process::exit(0);
                 },

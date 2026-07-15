@@ -19,9 +19,7 @@
 use std::io;
 use std::{fs, path::Path};
 
-use crossterm::execute;
-use crossterm::event::{self, DisableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::Frame;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -84,7 +82,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-fn handle_input(selected_yes: &mut bool, terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>) -> Option<bool> {
+fn handle_input(selected_yes: &mut bool) -> Option<bool> {
     if let Ok(event) = event::read() {
         if let Event::Key(key) = event {
             if key.kind == KeyEventKind::Press {
@@ -98,23 +96,11 @@ fn handle_input(selected_yes: &mut bool, terminal: &mut ratatui::Terminal<Crosst
                     KeyCode::Char('n') | KeyCode::Char('N') => return Some(false),
                     KeyCode::Esc => return Some(false),
                     KeyCode::Char('q') => {
-                        let _ = disable_raw_mode();
-                        let _ = execute!(
-                            terminal.backend_mut(),
-                            LeaveAlternateScreen,
-                            DisableMouseCapture
-                        );
-                        let _ = terminal.show_cursor();
+                        ratatui::restore();
                         std::process::exit(0);
                     },
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        let _ = disable_raw_mode();
-                        let _ = execute!(
-                            terminal.backend_mut(),
-                            LeaveAlternateScreen,
-                            DisableMouseCapture
-                        );
-                        let _ = terminal.show_cursor();
+                        ratatui::restore();
                         std::process::exit(0);
                     },
                     _ => return None,
@@ -195,7 +181,7 @@ pub fn user_wants_optimization(terminal: &mut ratatui::Terminal<CrosstermBackend
     loop {
         let _ = terminal.draw(|f| ui(f, selected_yes));
 
-        if let Some(decision) = handle_input(&mut selected_yes, terminal) {
+        if let Some(decision) = handle_input(&mut selected_yes) {
             return decision;
         }
     }

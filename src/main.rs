@@ -46,11 +46,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal: Terminal<CrosstermBackend<io::Stdout>> = Terminal::new(backend)?;
+    let mut terminal= ratatui::init();
 
     let args = Args::parse();
     let work_dir = args.work_dir;
@@ -59,7 +55,10 @@ fn main() -> Result<()> {
 
     let dir_actions = get_choise(&mut terminal, &work_dir)?;
 
-    let opt_res = if optimizer_ui::user_wants_optimization(&mut terminal, &work_dir, &dir_actions) {
+    let user_wants_opt = optimizer_ui::user_wants_optimization(&mut terminal, &work_dir, &dir_actions);
+    ratatui::restore();
+
+    let opt_res = if user_wants_opt {
         optimizer::optimize_images(&work_dir, &dir_actions).ok()
     } else {
         None
@@ -68,14 +67,6 @@ fn main() -> Result<()> {
     //
 
     todo!(); // pack everything
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
 
     Ok(())
 }

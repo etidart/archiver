@@ -23,7 +23,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
     backend::CrosstermBackend,
@@ -487,47 +487,49 @@ pub fn get_choise(terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>
         terminal.draw(|f| ui(f, &mut app))?;
 
         if let Event::Key(key) = event::read()? {
-            match key.code {
-                KeyCode::Char('q') => {
-                    ratatui::restore();
-                    app.overrides.save_to_disk();
-                    std::process::exit(0);
-                },
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    ratatui::restore();
-                    app.overrides.save_to_disk();
-                    std::process::exit(0);
-                },
-                KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                    app.overrides.save_to_disk();
-                    app.should_quit = true;
-                },
-                KeyCode::Tab => {
-                    app.focus = match app.focus {
-                        Panel::Left => Panel::Right,
-                        Panel::Right => Panel::Left,
-                    };
-                },
-                KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-                KeyCode::Up | KeyCode::Char('k') => app.move_up(),
-                KeyCode::Enter | KeyCode::Right => {
-                    if app.focus == Panel::Left {
-                        app.enter()
-                    }
-                },
-                KeyCode::Left | KeyCode::Char('h') => {
-                    if app.focus == Panel::Left {
-                        app.go_parent()
-                    }
-                },
-                KeyCode::Char(' ') => {
-                    match app.focus {
-                        Panel::Left => app.cycle_option_current(),
-                        Panel::Right => app.cycle_extension_current(),
-                    }
-                },
-                KeyCode::Char('r') => app.reset(),
-                _ => {}
+            if key.kind == KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Char('q') => {
+                        ratatui::restore();
+                        app.overrides.save_to_disk();
+                        std::process::exit(0);
+                    },
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        ratatui::restore();
+                        app.overrides.save_to_disk();
+                        std::process::exit(0);
+                    },
+                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        app.overrides.save_to_disk();
+                        app.should_quit = true;
+                    },
+                    KeyCode::Tab => {
+                        app.focus = match app.focus {
+                            Panel::Left => Panel::Right,
+                            Panel::Right => Panel::Left,
+                        };
+                    },
+                    KeyCode::Down | KeyCode::Char('j') => app.move_down(),
+                    KeyCode::Up | KeyCode::Char('k') => app.move_up(),
+                    KeyCode::Enter | KeyCode::Right => {
+                        if app.focus == Panel::Left {
+                            app.enter()
+                        }
+                    },
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        if app.focus == Panel::Left {
+                            app.go_parent()
+                        }
+                    },
+                    KeyCode::Char(' ') => {
+                        match app.focus {
+                            Panel::Left => app.cycle_option_current(),
+                            Panel::Right => app.cycle_extension_current(),
+                        }
+                    },
+                    KeyCode::Char('r') => app.reset(),
+                    _ => {}
+                }
             }
         }
     }

@@ -31,18 +31,18 @@ use crate::{archiver::create_archive, dirbuster::get_choise};
 
 #[derive(Debug, clap::Parser)]
 struct Args {
+    output_file: PathBuf,
     #[arg(default_value = ".")]
     work_dir: PathBuf,
-    output_file: PathBuf,
 }
 
 fn main() -> Result<()> {
-    let mut terminal= ratatui::init();
-
     let args = Args::parse();
     let work_dir = args.work_dir;
     // Make sure we work with canonical (absolute) paths everywhere.
     let work_dir = work_dir.canonicalize().unwrap_or(work_dir);
+
+    let mut terminal= ratatui::init();
 
     let dir_actions = get_choise(&mut terminal, &work_dir)?;
 

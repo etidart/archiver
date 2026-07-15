@@ -2,6 +2,12 @@
 name = "archiver"
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Program to simplify the creation of archives"
+repository = "https://github.com/etidart/archiver"
+readme = "README.md"
+keywords = ["archiving", "compression", "tui"]
+categories = ["compression", "filesystem", "multimedia::images"]
 
 [dependencies]
 anyhow = "1.0.103"

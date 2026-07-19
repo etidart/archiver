@@ -16,10 +16,10 @@
  * archiver. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{collections::HashSet, fs, io::{self, Write}, path::{Path, PathBuf}, process::{ChildStdout, Command, Stdio}, thread, sync::{Arc, mpsc}};
+use std::{collections::HashSet, fs, io::{self, BufWriter}, path::{Path, PathBuf}, process::{ChildStdout, Command, Stdio}, sync::{Arc, mpsc}, thread};
 
 use anyhow::{Context, Result};
-use image::{ImageBuffer, imageops::{FilterType, grayscale, resize, rotate90}};
+use image::{EncodableLayout, GenericImage, ImageBuffer, ImageEncoder, codecs::png::PngEncoder, imageops::{FilterType, grayscale, resize, rotate90}};
 use kdtree::{KdTree, distance::squared_euclidean};
 use rand::distr::{Alphanumeric, SampleString};
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -275,26 +275,30 @@ fn launch_ffmpeg(paths_with_data: Arc<Vec<ImageData>>) -> Result<ChildStdout> {
         .spawn()
         .context("failed to spawn ffmpeg")?;
 
-    let mut stdin = ffmpeg.stdin.take().unwrap();
+    let stdin = ffmpeg.stdin.take().unwrap();
     let stdout = ffmpeg.stdout.take().unwrap();
 
     std::thread::spawn(move || {
+        let mut canvas = ImageBuffer::new(max_w, max_h);
+        let mut stdin = BufWriter::new(stdin);
         for data in &*paths_with_data {
             if let Ok(img) = image::open(&data.path) {
                 let img = img.to_rgba16();
                 let img = if data.rotate { rotate90(&img) } else { img };
-                let mut canvas = ImageBuffer::new(max_w, max_h);
-                for y in 0..img.height() {
-                    for x in 0..img.width() {
-                        let pixel = *img.get_pixel(x, y);
-                        canvas.put_pixel(x, y, pixel);
-                    }
-                }
-                let mut png_bytes: Vec<u8> = Vec::new();
-                canvas.write_to(&mut io::Cursor::new(&mut png_bytes), image::ImageFormat::Png).unwrap();
-                stdin.write_all(&png_bytes).unwrap();
+
+                canvas.fill(0);
+                let _ = canvas.copy_from(&img, 0, 0);
+
+                let encoder = PngEncoder::new(&mut stdin);
+                let _ = encoder.write_image(
+                    canvas.as_bytes(),
+                    canvas.width(),
+                    canvas.height(),
+                    image::ExtendedColorType::Rgba16,
+                );
             }
         }
+        drop(stdin);
         let _ = ffmpeg.wait();
     });
 

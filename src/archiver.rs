@@ -16,10 +16,11 @@
  * archiver. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{collections::HashSet, fs::{self, OpenOptions}, io::{self, Read, Seek, SeekFrom, Write}, path::{Path, PathBuf}, time::SystemTime};
+use std::{collections::HashSet, fs::{self, OpenOptions}, io::{self, Seek, Write}, path::{Path, PathBuf}, time::SystemTime};
 
 use anyhow::{Context, Result};
 use tar::Header;
+use tempfile::tempfile;
 use uuid::Uuid;
 use xz2::{stream::{Check, Filters, LzmaOptions, MatchFinder, Mode, Stream}, write::XzEncoder};
 
@@ -159,47 +160,33 @@ pub fn create_archive(arch_path: &Path, root_dir: &Path, choise: ChosenOptions, 
     compr_header.set_entry_type(tar::EntryType::Regular);
 
     if let Some(mut opt) = optimized {
-        uncompr_header.set_size(0);
-        uncompr_header.set_cksum();
-        let empty_data = [0u8; 0];
-        main_arch.append_data(&mut uncompr_header, "uncompressed.tar", &empty_data[..])?;
-        let mut file = main_arch.into_inner()?;
+        {
+            let tmp = tempfile()?;
 
-        file.seek(SeekFrom::End(-1024))?;
-        let start_pos = file.stream_position()?;
+            let mut uncompr_builder = tar::Builder::new(tmp);
+            let mut optimized_vid_header = Header::new_gnu();
+            optimized_vid_header.set_mode(0o100777);
+            optimized_vid_header.set_uid(0);
+            optimized_vid_header.set_gid(0);
+            optimized_vid_header.set_mtime(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
+            let _ = optimized_vid_header.set_username("root");
+            let _ = optimized_vid_header.set_groupname("root");
+            optimized_vid_header.set_entry_type(tar::EntryType::Regular);
+            let mut opt_vid_writer = uncompr_builder.append_writer(&mut optimized_vid_header, &uncompr[0].path)?;
 
-        let mut uncompr_builder = tar::Builder::new(file);
-        let mut optimized_vid_header = Header::new_gnu();
-        optimized_vid_header.set_mode(0o100777);
-        optimized_vid_header.set_uid(0);
-        optimized_vid_header.set_gid(0);
-        optimized_vid_header.set_mtime(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
-        let _ = optimized_vid_header.set_username("root");
-        let _ = optimized_vid_header.set_groupname("root");
-        optimized_vid_header.set_entry_type(tar::EntryType::Regular);
-        let mut opt_vid_writer = uncompr_builder.append_writer(&mut optimized_vid_header, &uncompr[0].path)?;
+            io::copy(&mut opt.ffmpeg, &mut opt_vid_writer)?;
+            opt_vid_writer.finish()?;
 
-        io::copy(&mut opt.ffmpeg, &mut opt_vid_writer)?;
-        opt_vid_writer.finish()?;
+            for uncomp_item in uncompr.iter().skip(1) {
+                uncompr_builder.append_path_with_name(&uncomp_item.path, remove_root(&uncomp_item.path, root_dir))?;
+            }
+            let mut tmp = uncompr_builder.into_inner()?;
+            tmp.rewind()?;
 
-        for uncomp_item in uncompr.iter().skip(1) {
-            uncompr_builder.append_path_with_name(&uncomp_item.path, remove_root(&uncomp_item.path, root_dir))?;
+            let mut uncompr_entry = main_arch.append_writer(&mut uncompr_header, "uncompressed.tar")?;
+            io::copy(&mut tmp, &mut uncompr_entry)?;
+            uncompr_entry.finish()?;
         }
-        let mut file = uncompr_builder.into_inner()?;
-        file.seek(SeekFrom::End(0))?;
-        let end_pos = file.stream_position()?;
-
-        let uncompr_len = end_pos.saturating_sub(start_pos);
-        assert!(uncompr_len >= 1024);
-        file.seek(SeekFrom::Start(start_pos - 512))?;
-        let mut header_buf = [0u8; 512];
-        file.read_exact(&mut header_buf)?;
-        let mut header = Header::from_byte_slice(&header_buf[..]).clone();
-        header.set_size(uncompr_len);
-        file.seek(SeekFrom::Current(-512))?;
-        file.write_all(&header.as_bytes()[..])?;
-        file.seek(SeekFrom::End(0))?;
-        let mut main_arch = tar::Builder::new(file);
 
         let compr_writer = main_arch.append_writer(&mut compr_header, "compressed.tar.xz")?;
         let compr_writer = get_xz_encoder(compr_writer);

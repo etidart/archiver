@@ -24,6 +24,7 @@ rand = "0.10.2"
 ratatui = "0.30.2"
 serde = { version = "1.0.228", features = ["derive"] }
 tar = "0.4.46"
+tempfile = "3.27.0"
 unicode-width = "0.2.2"
 uuid = { version = "1.23.5", features = ["v4"] }
 xz2 = { version = "0.1.7", features = ["static"] }

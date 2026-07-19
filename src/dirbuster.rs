@@ -17,10 +17,7 @@
  */
 
 use std::{
-    collections::HashMap,
-    fs,
-    io,
-    path::{Path, PathBuf},
+    collections::HashMap, fs, io, path::{Path, PathBuf},
 };
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -36,7 +33,7 @@ use anyhow::Result;
 use indicatif::HumanBytes;
 use unicode_width::UnicodeWidthStr;
 
-use crate::common::ArchiveOption;
+use crate::common::{ArchiveOption, force_shutdown};
 
 enum VisibleEntry {
     ParentDir,
@@ -443,7 +440,7 @@ fn ui(frame: &mut Frame, app: &mut App) {
         .highlight_style(left_highlight)
         .highlight_symbol("");
 
-    let footer_text = "  q/Ctrl+c:quit  ↑/↓:move  Space:cycle option  Enter/→:descend  ←:parent  r:reset  u:undo reset  Tab:switch active tab  Shift+Enter:confirm choise";
+    let footer_text = "  q/Ctrl+c:quit  ↑/↓:move  Space:cycle option  Enter/→:descend  ←:parent  r:reset  u:undo reset  Tab:switch active tab  Ctrl+g:confirm choise";
     let footer_paragraph = Paragraph::new(footer_text)
             .style(Style::default().fg(Color::DarkGray))
             .wrap(Wrap { trim: true });
@@ -500,16 +497,14 @@ pub fn get_choise(terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>
             if key.kind == KeyEventKind::Press {
                 match key.code {
                     KeyCode::Char('q') => {
-                        ratatui::restore();
                         app.overrides.save_to_disk();
-                        std::process::exit(0);
+                        force_shutdown();
                     },
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        ratatui::restore();
                         app.overrides.save_to_disk();
-                        std::process::exit(0);
+                        force_shutdown();
                     },
-                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    KeyCode::Char('g') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         app.overrides.save_to_disk();
                         app.should_quit = true;
                     },

@@ -16,6 +16,9 @@
  * archiver. If not, see <https://www.gnu.org/licenses/>.
  */
 
+use std::io::{self, Write};
+
+use crossterm::{cursor::Show, execute};
 use serde::{Serialize, Deserialize};
 
 pub const OPTIMIZABLE_EXTS: [&str; 3] = ["jpeg", "jpg", "png"];
@@ -49,4 +52,11 @@ impl ArchiveOption {
             ArchiveOption::Compress => '*',
         }
     }
+}
+
+pub fn force_shutdown() {
+    ratatui::restore();
+    let _ = execute!(io::stdout(), Show);
+    let _ = io::stdout().flush();
+    std::process::exit(0);
 }

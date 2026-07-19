@@ -158,8 +158,6 @@ pub fn create_archive(arch_path: &Path, root_dir: &Path, choise: ChosenOptions, 
     let _ = compr_header.set_groupname("root");
     compr_header.set_entry_type(tar::EntryType::Regular);
 
-
-
     if let Some(mut opt) = optimized {
         uncompr_header.set_size(0);
         uncompr_header.set_cksum();

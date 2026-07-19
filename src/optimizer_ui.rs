@@ -28,7 +28,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::dirbuster::ChosenOptions;
-use crate::common::{ArchiveOption, OPTIMIZABLE_EXTS};
+use crate::common::{ArchiveOption, OPTIMIZABLE_EXTS, force_shutdown};
 
 fn is_any_optimizable(choise: &ChosenOptions, root: &Path) -> bool {
     fn walk(dir: &Path, choise: &ChosenOptions) -> Option<()> {
@@ -96,12 +96,10 @@ fn handle_input(selected_yes: &mut bool) -> Option<bool> {
                     KeyCode::Char('n') | KeyCode::Char('N') => return Some(false),
                     KeyCode::Esc => return Some(false),
                     KeyCode::Char('q') => {
-                        ratatui::restore();
-                        std::process::exit(0);
+                        force_shutdown();
                     },
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        ratatui::restore();
-                        std::process::exit(0);
+                        force_shutdown();
                     },
                     _ => return None,
                 }

@@ -42,7 +42,7 @@ fn main() -> Result<()> {
     // Make sure we work with canonical (absolute) paths everywhere.
     let work_dir = work_dir.canonicalize().unwrap_or(work_dir);
 
-    let mut terminal= ratatui::init();
+    let mut terminal = ratatui::init();
 
     let dir_actions = get_choise(&mut terminal, &work_dir)?;
 

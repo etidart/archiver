@@ -59,27 +59,16 @@ fn is_any_optimizable(choise: &ChosenOptions, root: &Path) -> bool {
     walk(root, choise).is_some()
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    assert!(percent_x <= 100);
-    assert!(percent_y <= 100);
+fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
+    // Clamp desired size to the available area (but never go below 0)
+    let w = width.min(r.width);
+    let h = height.min(r.height);
 
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
+    // Center horizontally and vertically
+    let x = r.x + (r.width.saturating_sub(w)) / 2;
+    let y = r.y + (r.height.saturating_sub(h)) / 2;
 
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
+    Rect::new(x, y, w, h)
 }
 
 fn handle_input(selected_yes: &mut bool) -> Option<bool> {
@@ -87,7 +76,7 @@ fn handle_input(selected_yes: &mut bool) -> Option<bool> {
         if let Event::Key(key) = event {
             if key.kind == KeyEventKind::Press {
                 match key.code {
-                    KeyCode::Up | KeyCode::Down | KeyCode::Tab => {
+                    KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
                         *selected_yes = !*selected_yes;
                         return None
                     },
@@ -112,22 +101,23 @@ fn handle_input(selected_yes: &mut bool) -> Option<bool> {
 fn ui(frame: &mut Frame, selected_yes: bool) {
     let area = frame.area();
 
-    let popup_width = 55;
+    let popup_width = 70;
     let popup_height = 7;
     let popup_area = centered_rect(popup_width, popup_height, area);
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
         .title("Optimize Images?")
-        .borders(Borders::ALL)
-        .style(Style::default().bg(Color::DarkGray));
+        .borders(Borders::ALL);
+    frame.render_widget(block.clone(), popup_area);
+
     let inner = block.inner(popup_area);
 
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
+            Constraint::Ratio(3, 4),
+            Constraint::Ratio(1, 4),
         ])
         .split(inner);
     let text_area = layout[0];
@@ -144,8 +134,8 @@ fn ui(frame: &mut Frame, selected_yes: bool) {
     frame.render_widget(paragraph, text_area);
 
     let button_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(button_area);
 
     let yes_area = button_layout[0];

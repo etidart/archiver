@@ -20,7 +20,7 @@ use std::{collections::HashSet, fs::{self, OpenOptions}, io::{self, Seek, Write}
 
 use anyhow::{Context, Result};
 use tar::Header;
-use tempfile::tempfile;
+use tempfile::tempfile_in;
 use uuid::Uuid;
 use xz2::{stream::{Check, Filters, LzmaOptions, MatchFinder, Mode, Stream}, write::XzEncoder};
 
@@ -160,33 +160,41 @@ pub fn create_archive(arch_path: &Path, root_dir: &Path, choise: ChosenOptions, 
     compr_header.set_entry_type(tar::EntryType::Regular);
 
     if let Some(mut opt) = optimized {
-        {
-            let tmp = tempfile()?;
-
-            let mut uncompr_builder = tar::Builder::new(tmp);
-            let mut optimized_vid_header = Header::new_gnu();
-            optimized_vid_header.set_mode(0o100777);
-            optimized_vid_header.set_uid(0);
-            optimized_vid_header.set_gid(0);
-            optimized_vid_header.set_mtime(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
-            let _ = optimized_vid_header.set_username("root");
-            let _ = optimized_vid_header.set_groupname("root");
-            optimized_vid_header.set_entry_type(tar::EntryType::Regular);
-            let mut opt_vid_writer = uncompr_builder.append_writer(&mut optimized_vid_header, &uncompr[0].path)?;
-
-            io::copy(&mut opt.ffmpeg, &mut opt_vid_writer)?;
-            opt_vid_writer.finish()?;
-
-            for uncomp_item in uncompr.iter().skip(1) {
-                uncompr_builder.append_path_with_name(&uncomp_item.path, remove_root(&uncomp_item.path, root_dir))?;
+        let mut tmp = tempfile_in(
+            #[cfg(unix)]
+            {
+                "/var/tmp"
+            },
+            #[cfg(not(unix))]
+            {
+                std::env::temp_dir()
             }
-            let mut tmp = uncompr_builder.into_inner()?;
-            tmp.rewind()?;
+        )?;
 
-            let mut uncompr_entry = main_arch.append_writer(&mut uncompr_header, "uncompressed.tar")?;
-            io::copy(&mut tmp, &mut uncompr_entry)?;
-            uncompr_entry.finish()?;
+        io::copy(&mut opt.ffmpeg, &mut tmp)?;
+        let tmp_size = tmp.stream_position()?;
+        tmp.rewind()?;
+
+        let uncompr_entry = main_arch.append_writer(&mut uncompr_header, "uncompressed.tar")?;
+
+        let mut uncompr_builder = tar::Builder::new(uncompr_entry);
+        let mut optimized_vid_header = Header::new_gnu();
+        optimized_vid_header.set_mode(0o100777);
+        optimized_vid_header.set_uid(0);
+        optimized_vid_header.set_gid(0);
+        optimized_vid_header.set_mtime(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
+        let _ = optimized_vid_header.set_username("root");
+        let _ = optimized_vid_header.set_groupname("root");
+        optimized_vid_header.set_entry_type(tar::EntryType::Regular);
+        optimized_vid_header.set_size(tmp_size);
+        optimized_vid_header.set_cksum();
+        uncompr_builder.append_data(&mut optimized_vid_header, &uncompr[0].path, tmp)?;
+
+        for uncomp_item in uncompr.iter().skip(1) {
+            uncompr_builder.append_path_with_name(&uncomp_item.path, remove_root(&uncomp_item.path, root_dir))?;
         }
+
+        uncompr_builder.into_inner()?.finish()?;
 
         let compr_writer = main_arch.append_writer(&mut compr_header, "compressed.tar.xz")?;
         let compr_writer = get_xz_encoder(compr_writer);

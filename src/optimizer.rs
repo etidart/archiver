@@ -24,7 +24,7 @@ use kdtree::{KdTree, distance::squared_euclidean};
 use rand::distr::{Alphanumeric, SampleString};
 use base64::{Engine, prelude::BASE64_STANDARD};
 
-use crate::{common::{ArchiveOption, OPTIMIZABLE_EXTS}, dirbuster::ChosenOptions};
+use crate::{CONFIG, common::{ArchiveOption, OPTIMIZABLE_EXTS}, dirbuster::ChosenOptions};
 
 const FEATURE_DIM: u32 = 32;
 const FEATURE_LEN: usize = (FEATURE_DIM * FEATURE_DIM) as usize;
@@ -34,8 +34,11 @@ fn find_all_optimizable(choise: &ChosenOptions, root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, choise: &ChosenOptions, res: &mut Vec<PathBuf>) -> io::Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
-            // using fs::metadata to traverse symlinks
-            let ft = fs::metadata(entry.path())?.file_type();
+            let ft = if CONFIG.get().unwrap().resolve_symlinks {
+                fs::metadata(entry.path())
+            } else {
+                fs::symlink_metadata(entry.path())
+            }?.file_type();
             if ft.is_dir() {
                 if let Err(_) = walk(&entry.path(), choise, res) {
                     continue;

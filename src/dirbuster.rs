@@ -33,7 +33,7 @@ use anyhow::Result;
 use indicatif::HumanBytes;
 use unicode_width::UnicodeWidthStr;
 
-use crate::common::{ArchiveOption, force_shutdown};
+use crate::{CONFIG, common::{ArchiveOption, force_shutdown}};
 
 enum VisibleEntry {
     ParentDir,
@@ -93,8 +93,11 @@ fn collect_extension_sizes(root: &Path) -> io::Result<HashMap<String, u64>> {
     fn walk(dir: &Path, ext_sizes: &mut HashMap<String, u64>) -> io::Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
-            // using fs::metadata to traverse symlinks
-            let ft = fs::metadata(entry.path())?.file_type();
+            let ft = if CONFIG.get().unwrap().resolve_symlinks {
+                fs::metadata(entry.path())
+            } else {
+                fs::symlink_metadata(entry.path())
+            }?.file_type();
             if ft.is_dir() {
                 if let Err(_) = walk(&entry.path(), ext_sizes) {
                     continue;

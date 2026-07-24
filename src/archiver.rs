@@ -24,7 +24,7 @@ use tempfile::tempfile_in;
 use uuid::Uuid;
 use xz2::{stream::{Check, Filters, LzmaOptions, MatchFinder, Mode, Stream}, write::XzEncoder};
 
-use crate::{dirbuster::ChosenOptions, optimizer::OptimizerOutput};
+use crate::{CONFIG, dirbuster::ChosenOptions, optimizer::OptimizerOutput};
 use crate::common::ArchiveOption;
 
 struct FileData {
@@ -48,8 +48,11 @@ fn get_lists_of_files(root_dir: &Path, choise: ChosenOptions, optimized: &Option
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            // using fs::metadata to traverse symlinks
-            let md = fs::metadata(&path)?;
+            let md = if CONFIG.get().unwrap().resolve_symlinks {
+                fs::metadata(&path)
+            } else {
+                fs::symlink_metadata(&path)
+            }?;
             let ft = md.file_type();
             if ft.is_dir() {
                 if let Err(_) = walk(&path, choise, optimized, uncompr, compr) {

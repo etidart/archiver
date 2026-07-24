@@ -27,6 +27,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+use crate::CONFIG;
 use crate::dirbuster::ChosenOptions;
 use crate::common::{ArchiveOption, OPTIMIZABLE_EXTS, force_shutdown};
 
@@ -34,8 +35,11 @@ fn is_any_optimizable(choise: &ChosenOptions, root: &Path) -> bool {
     fn walk(dir: &Path, choise: &ChosenOptions) -> Option<()> {
         for entry in fs::read_dir(dir).ok()? {
             let entry = entry.ok()?;
-            // using fs::metadata to traverse symlinks
-            let ft = fs::metadata(entry.path()).ok()?.file_type();
+            let ft = if CONFIG.get().unwrap().resolve_symlinks {
+                fs::metadata(entry.path())
+            } else {
+                fs::symlink_metadata(entry.path())
+            }.ok()?.file_type();
             if ft.is_dir() {
                 if let Some(_) = walk(&entry.path(), choise) {
                     return Some(());

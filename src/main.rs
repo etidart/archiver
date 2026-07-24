@@ -23,6 +23,7 @@ mod optimizer;
 mod archiver;
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use anyhow::Result;
 use clap::Parser;
@@ -31,13 +32,23 @@ use crate::{archiver::create_archive, dirbuster::get_choise};
 
 #[derive(Debug, clap::Parser)]
 struct Args {
+    #[arg(short = 'h', long = "dereference")]
+    resolve_symlinks: bool,
     output_file: PathBuf,
     #[arg(default_value = ".")]
     work_dir: PathBuf,
 }
 
+#[derive(Debug)]
+struct Config {
+    resolve_symlinks: bool,
+}
+
+static CONFIG: OnceLock<Config> = OnceLock::new();
+
 fn main() -> Result<()> {
     let args = Args::parse();
+    CONFIG.set(Config { resolve_symlinks: args.resolve_symlinks }).unwrap();
     let work_dir = args.work_dir;
     // Make sure we work with canonical (absolute) paths everywhere.
     let work_dir = work_dir.canonicalize().unwrap_or(work_dir);

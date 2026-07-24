@@ -28,12 +28,17 @@ use std::sync::OnceLock;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::{archiver::create_archive, dirbuster::get_choise};
+use crate::{archiver::create_archive, common::ArchiveOption, dirbuster::get_choise};
 
 #[derive(Debug, clap::Parser)]
+#[command(disable_help_flag = true)]
 struct Args {
+    #[arg(long, action = clap::ArgAction::Help, help = "Print help information")]
+    help: Option<bool>,
     #[arg(short = 'h', long = "dereference")]
     resolve_symlinks: bool,
+    #[arg(short = 'D', long = "default", default_value = "compress")]
+    default_action: ArchiveOption,
     output_file: PathBuf,
     #[arg(default_value = ".")]
     work_dir: PathBuf,
@@ -42,13 +47,17 @@ struct Args {
 #[derive(Debug)]
 struct Config {
     resolve_symlinks: bool,
+    default_action: ArchiveOption,
 }
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    CONFIG.set(Config { resolve_symlinks: args.resolve_symlinks }).unwrap();
+    CONFIG.set(Config {
+        resolve_symlinks: args.resolve_symlinks,
+        default_action: args.default_action,
+    }).unwrap();
     let work_dir = args.work_dir;
     // Make sure we work with canonical (absolute) paths everywhere.
     let work_dir = work_dir.canonicalize().unwrap_or(work_dir);

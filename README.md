@@ -15,5 +15,4 @@ It also has a feature of optimizing images (jpg, jpeg, png) by compressing them 
 
 - There is no ability to choose what image files user wants to optimize. Currently all included image files will be optimized.
 - There is no progress bar or any other indication of the progress during the optimization and archiving.
-- Currently all symlinks are followed. This is unsafe because it may cause an infinite loop. Also this may not be a user preference.
 - Output to stdout is not supported. This is inconvenient for situations when further actions with the archive are required (gpg encryption, streaming through the network).

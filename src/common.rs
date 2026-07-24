@@ -20,19 +20,25 @@ use std::io::{self, Write};
 
 use crossterm::{cursor::Show, execute};
 use serde::{Serialize, Deserialize};
+use clap::ValueEnum;
+
+use crate::CONFIG;
 
 pub const OPTIMIZABLE_EXTS: [&str; 3] = ["jpeg", "jpg", "png"];
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, ValueEnum)]
 pub enum ArchiveOption {
+    #[value(name = "exclude", alias = "e")]
     Exclude,
+    #[value(name = "include", alias = "i")]
     Include,
+    #[value(name = "compress", alias = "c")]
     Compress,
 }
 
 impl Default for ArchiveOption {
     fn default() -> Self {
-        Self::Compress
+        CONFIG.get().unwrap().default_action
     }
 }
 

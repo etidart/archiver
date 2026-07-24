@@ -67,7 +67,7 @@ struct ImageData {
 }
 
 fn get_feature_vec_and_data(path: PathBuf) -> Result<(Vec<f64>, ImageData)> {
-    let img = image::open(&path).context("failed to open and read image")?.to_rgba16();
+    let img = image::open(&path).context("failed to open and read image")?.to_rgb8();
     let rotate = img.width() < img.height();
     let img = if rotate { rotate90(&img) } else { img };
     let res = (img.width(), img.height());
@@ -283,7 +283,7 @@ fn launch_ffmpeg(paths_with_data: Arc<Vec<ImageData>>) -> Result<ChildStdout> {
         let mut stdin = BufWriter::new(stdin);
         for data in &*paths_with_data {
             if let Ok(img) = image::open(&data.path) {
-                let img = img.to_rgba16();
+                let img = img.to_rgb8();
                 let img = if data.rotate { rotate90(&img) } else { img };
 
                 canvas.fill(0);
@@ -294,7 +294,7 @@ fn launch_ffmpeg(paths_with_data: Arc<Vec<ImageData>>) -> Result<ChildStdout> {
                     canvas.as_bytes(),
                     canvas.width(),
                     canvas.height(),
-                    image::ExtendedColorType::Rgba16,
+                    image::ExtendedColorType::Rgb8,
                 );
             }
         }

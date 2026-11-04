@@ -31,6 +31,7 @@ use ratatui::{
 };
 use anyhow::Result;
 use indicatif::HumanBytes;
+use serde::{Deserialize, Serialize};
 use unicode_width::UnicodeWidthStr;
 
 use crate::{CONFIG, common::{ArchiveOption, force_shutdown}};
@@ -118,32 +119,47 @@ fn collect_extension_sizes(root: &Path) -> io::Result<HashMap<String, u64>> {
     Ok(ext_sizes)
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+struct Override {
+    option: ArchiveOption,
+    seq: u64,
+}
+
 pub struct ChosenOptions {
-    map_paths: HashMap<PathBuf, ArchiveOption>,
-    map_exts: HashMap<String, ArchiveOption>,
+    map_paths: HashMap<PathBuf, Override>,
+    map_exts: HashMap<String, Override>,
     root: PathBuf,
+    next_seq: u64,
 }
 
 impl ChosenOptions {
+    fn consider(best: &mut Option<Override>, candidate: Override) {
+        if best.is_none_or(|current| candidate.seq > current.seq) {
+            *best = Some(candidate);
+        }
+    }
+
     pub fn effective_option(&self, path: &Path) -> ArchiveOption {
-        // first check the direct file path
-        if let Some(&opt) = self.map_paths.get(path) {
-            return opt;
+        let mut best = None;
+
+        // exact file path
+        if let Some(entry) = self.map_paths.get(path) {
+            Self::consider(&mut best, *entry);
         }
 
-        // then check extension
+        // extension
         if let Some(ext) = path.extension() {
             let ext_lower = ext.to_string_lossy().to_lowercase();
-            if let Some(&opt) = self.map_exts.get(&ext_lower) {
-                return opt;
+            if let Some(entry) = self.map_exts.get(&ext_lower) {
+                Self::consider(&mut best, *entry);
             }
         }
 
-        // then check parents
+        // every matching parent directory
         let mut p = path.parent();
         while let Some(curr) = p {
-            if let Some(&opt) = self.map_paths.get(curr) {
-                return opt;
+            if let Some(entry) = self.map_paths.get(curr) {
+                Self::consider(&mut best, *entry);
             }
             if curr == self.root {
                 break;
@@ -151,8 +167,20 @@ impl ChosenOptions {
             p = curr.parent();
         }
 
-        // then use the default
-        ArchiveOption::default()
+        // the most recently made choice wins, otherwise use the default
+        best.map(|entry| entry.option).unwrap_or_default()
+    }
+
+    fn record_path(&mut self, path: PathBuf, option: ArchiveOption) {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.map_paths.insert(path, Override { option, seq });
+    }
+
+    fn record_ext(&mut self, ext: String, option: ArchiveOption) {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.map_exts.insert(ext, Override { option, seq });
     }
 
     fn save_to_disk(&self) {
@@ -179,15 +207,23 @@ impl ChosenOptions {
         file.extend([".local", "state", "archiver",
             &format!("{:X}", md5::compute(root_dir.as_os_str().as_encoded_bytes()))]);
         let bin_data = std::fs::read(file).ok()?;
-        let (map_paths, map_exts) = postcard::from_bytes(&bin_data).ok()?;
-        Some(Self { map_paths, map_exts, root: root_dir.to_path_buf() })
+        let (map_paths, map_exts): (HashMap<PathBuf, Override>, HashMap<String, Override>) =
+            postcard::from_bytes(&bin_data).ok()?;
+        let next_seq = map_paths
+            .values()
+            .chain(map_exts.values())
+            .map(|entry| entry.seq)
+            .max()
+            .map_or(0, |seq| seq + 1);
+        Some(Self { map_paths, map_exts, root: root_dir.to_path_buf(), next_seq })
     }
 
     fn new(root_dir: &Path) -> Self {
         Self {
             map_paths: HashMap::new(),
             map_exts: HashMap::new(),
-            root: root_dir.to_path_buf()
+            root: root_dir.to_path_buf(),
+            next_seq: 0,
         }
     }
 }
@@ -331,27 +367,13 @@ impl App {
         }
         match &self.visible[idx] {
             VisibleEntry::ParentDir => {}
-            VisibleEntry::Child { path, is_dir } => {
+            VisibleEntry::Child { path, .. } => {
                 let effective = self.overrides.effective_option(path);
-                let next = effective.next();
-
-                if *is_dir {
-                    self.overrides.map_paths
-                        .retain(|k, _| !k.strip_prefix(path).is_ok());
-                }
-
-                self.overrides.map_paths.insert(path.clone(), next);
+                self.overrides.record_path(path.clone(), effective.next());
             },
-            VisibleEntry::Symlink { path, target_is_dir, .. } => {
+            VisibleEntry::Symlink { path, .. } => {
                 let effective = self.overrides.effective_option(path);
-                let next = effective.next();
-
-                if *target_is_dir {
-                    self.overrides.map_paths
-                        .retain(|k, _| !k.strip_prefix(path).is_ok());
-                }
-
-                self.overrides.map_paths.insert(path.clone(), next);
+                self.overrides.record_path(path.clone(), effective.next());
             }
         }
     }
@@ -363,8 +385,8 @@ impl App {
         let idx = self.right_state.selected().unwrap_or(0);
         if idx < self.extensions.len() {
             let ext = self.extensions[idx].0.clone();
-            let current = self.overrides.map_exts.get(&ext).copied().unwrap_or_default();
-            self.overrides.map_exts.insert(ext, current.next());
+            let current = self.overrides.map_exts.get(&ext).map(|entry| entry.option).unwrap_or_default();
+            self.overrides.record_ext(ext, current.next());
         }
     }
 }
@@ -470,7 +492,7 @@ fn ui(frame: &mut Frame, app: &mut App) {
         .extensions
         .iter()
         .map(|(ext, size)| {
-            let opt = app.overrides.map_exts.get(ext).copied().unwrap_or_default();
+            let opt = app.overrides.map_exts.get(ext).map(|entry| entry.option).unwrap_or_default();
             let name = if ext.is_empty() { "(none)" } else { ext.as_str() };
             let text = format!("[{}] {}  {:>8}", opt.to_char(), name, HumanBytes(*size));
             ListItem::new(Line::from(Span::raw(text)))

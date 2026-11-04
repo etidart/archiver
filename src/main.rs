@@ -18,8 +18,6 @@
 
 mod dirbuster;
 mod common;
-mod optimizer_ui;
-mod optimizer;
 mod archiver;
 
 use std::path::PathBuf;
@@ -66,16 +64,9 @@ fn main() -> Result<()> {
 
     let dir_actions = get_choise(&mut terminal, &work_dir)?;
 
-    let user_wants_opt = optimizer_ui::user_wants_optimization(&mut terminal, &work_dir, &dir_actions);
     ratatui::restore();
 
-    let opt_res = if user_wants_opt {
-        optimizer::optimize_images(&work_dir, &dir_actions).ok()
-    } else {
-        None
-    };
-
-    create_archive(&args.output_file, &work_dir, dir_actions, opt_res)?;
+    create_archive(&args.output_file, &work_dir, dir_actions)?;
 
     Ok(())
 }

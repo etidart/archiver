@@ -24,8 +24,6 @@ use clap::ValueEnum;
 
 use crate::CONFIG;
 
-pub const OPTIMIZABLE_EXTS: [&str; 3] = ["jpeg", "jpg", "png"];
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, ValueEnum)]
 pub enum ArchiveOption {
     #[value(name = "exclude", alias = "e")]

@@ -31,11 +31,11 @@ struct FileData {
     size: u64,
 }
 
-fn get_lists_of_files(root_dir: &Path, choise: ChosenOptions) -> (Vec<FileData>, Vec<FileData>) {
+fn get_lists_of_files(root_dir: &Path, choice: ChosenOptions) -> (Vec<FileData>, Vec<FileData>) {
     let mut uncompr = Vec::new();
     let mut compr = Vec::new();
 
-    fn walk(dir: &Path, choise: &ChosenOptions, uncompr: &mut Vec<FileData>, compr: &mut Vec<FileData>) -> io::Result<()> {
+    fn walk(dir: &Path, choice: &ChosenOptions, uncompr: &mut Vec<FileData>, compr: &mut Vec<FileData>) -> io::Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -46,11 +46,11 @@ fn get_lists_of_files(root_dir: &Path, choise: ChosenOptions) -> (Vec<FileData>,
             }?;
             let ft = md.file_type();
             if ft.is_dir() {
-                if let Err(_) = walk(&path, choise, uncompr, compr) {
+                if let Err(_) = walk(&path, choice, uncompr, compr) {
                     continue;
                 }
             } else if ft.is_file() {
-                match choise.effective_option(&path) {
+                match choice.effective_option(&path) {
                     ArchiveOption::Include => uncompr.push(FileData { path, mtime: md.modified().unwrap_or(SystemTime::now()), size: md.len() }),
                     ArchiveOption::Compress => compr.push(FileData { path, mtime: md.modified().unwrap_or(SystemTime::now()), size: md.len() }),
                     _ => continue
@@ -60,7 +60,7 @@ fn get_lists_of_files(root_dir: &Path, choise: ChosenOptions) -> (Vec<FileData>,
         Ok(())
     }
 
-    let _ = walk(root_dir, &choise, &mut uncompr, &mut compr);
+    let _ = walk(root_dir, &choice, &mut uncompr, &mut compr);
 
     (uncompr, compr)
 }
@@ -84,8 +84,8 @@ fn get_xz_encoder<T: io::Write>(output: T) -> XzEncoder<T> {
     XzEncoder::new_stream(output, stream)
 }
 
-pub fn create_archive(arch_path: &Path, root_dir: &Path, choise: ChosenOptions) -> Result<()> {
-    let (uncompr, compr) = get_lists_of_files(root_dir, choise);
+pub fn create_archive(arch_path: &Path, root_dir: &Path, choice: ChosenOptions) -> Result<()> {
+    let (uncompr, compr) = get_lists_of_files(root_dir, choice);
 
     let arch_file = OpenOptions::new().create(true).read(true).write(true).open(arch_path).context("failed to open the output file")?;
     let mut main_arch = tar::Builder::new(arch_file);

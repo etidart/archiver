@@ -26,7 +26,7 @@ use std::sync::OnceLock;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::{archiver::create_archive, common::ArchiveOption, dirbuster::get_choise};
+use crate::{archiver::create_archive, common::ArchiveOption, dirbuster::get_choice};
 
 #[derive(Debug, clap::Parser)]
 #[command(disable_help_flag = true)]
@@ -62,7 +62,7 @@ fn main() -> Result<()> {
 
     let mut terminal = ratatui::init();
 
-    let dir_actions = get_choise(&mut terminal, &work_dir)?;
+    let dir_actions = get_choice(&mut terminal, &work_dir)?;
 
     ratatui::restore();
 

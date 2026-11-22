@@ -465,7 +465,7 @@ fn ui(frame: &mut Frame, app: &mut App) {
         .highlight_style(left_highlight)
         .highlight_symbol("");
 
-    let footer_text = "  q/Ctrl+c:quit  ↑/↓:move  Space:cycle option  Enter/→:descend  ←:parent  r:reset  u:undo reset  Tab:switch active tab  Ctrl+g:confirm choise";
+    let footer_text = "  q/Ctrl+c:quit  ↑/↓:move  Space:cycle option  Enter/→:descend  ←:parent  r:reset  u:undo reset  Tab:switch active tab  Ctrl+g:confirm choice";
     let footer_paragraph = Paragraph::new(footer_text)
             .style(Style::default().fg(Color::DarkGray))
             .wrap(Wrap { trim: true });
@@ -512,7 +512,7 @@ fn ui(frame: &mut Frame, app: &mut App) {
     frame.render_stateful_widget(ext_list, inner_right, &mut app.right_state);
 }
 
-pub fn get_choise(terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>, root_dir: &Path) -> Result<ChosenOptions> {
+pub fn get_choice(terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>, root_dir: &Path) -> Result<ChosenOptions> {
     let mut app = App::new(&root_dir)?;
 
     while !app.should_quit {

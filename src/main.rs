@@ -26,7 +26,7 @@ use std::sync::OnceLock;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::{archiver::create_archive, common::ArchiveOption, dirbuster::get_choice};
+use crate::{archiver::{create_archive, extract_archive, list_archive}, common::ArchiveOption, dirbuster::get_choice};
 
 #[derive(Debug, clap::Parser)]
 #[command(disable_help_flag = true)]
@@ -37,9 +37,15 @@ struct Args {
     resolve_symlinks: bool,
     #[arg(short = 'D', long = "default", default_value = "compress")]
     default_action: ArchiveOption,
+    #[arg(short = 'x', long = "extract", conflicts_with = "list")]
+    extract: bool,
+    #[arg(short = 't', long = "list", conflicts_with = "extract")]
+    list: bool,
+    #[arg(short = 'C', long = "directory", default_value = ".")]
+    directory: PathBuf,
     output_file: PathBuf,
-    #[arg(default_value = ".")]
-    work_dir: PathBuf,
+    #[arg(trailing_var_arg = true)]
+    paths: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -52,11 +58,19 @@ static CONFIG: OnceLock<Config> = OnceLock::new();
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    if args.extract || args.list {
+        let paths = args.paths;
+        if args.list {
+            return list_archive(&args.output_file, &paths);
+        }
+        return extract_archive(&args.output_file, &args.directory, &paths);
+    }
+
     CONFIG.set(Config {
         resolve_symlinks: args.resolve_symlinks,
         default_action: args.default_action,
     }).unwrap();
-    let work_dir = args.work_dir;
+    let work_dir = args.paths.first().cloned().unwrap_or_else(|| PathBuf::from("."));
     // Make sure we work with canonical (absolute) paths everywhere.
     let work_dir = work_dir.canonicalize().unwrap_or(work_dir);
 

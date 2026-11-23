@@ -16,11 +16,11 @@
  * archiver. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{fs::{self, OpenOptions}, io::{self, Write}, path::{Path, PathBuf}, time::SystemTime};
+use std::{fs::{self, File, OpenOptions}, io::{self, Read, Write}, path::{Path, PathBuf}, time::SystemTime};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use tar::Header;
-use xz2::{stream::{Check, Filters, LzmaOptions, MatchFinder, Mode, Stream}, write::XzEncoder};
+use xz2::{read::XzDecoder, stream::{Check, Filters, LzmaOptions, MatchFinder, Mode, Stream}, write::XzEncoder};
 
 use crate::{CONFIG, dirbuster::ChosenOptions};
 use crate::common::ArchiveOption;
@@ -87,7 +87,7 @@ fn get_xz_encoder<T: io::Write>(output: T) -> XzEncoder<T> {
 pub fn create_archive(arch_path: &Path, root_dir: &Path, choice: ChosenOptions) -> Result<()> {
     let (uncompr, compr) = get_lists_of_files(root_dir, choice);
 
-    let arch_file = OpenOptions::new().create(true).read(true).write(true).open(arch_path).context("failed to open the output file")?;
+    let arch_file = OpenOptions::new().create(true).truncate(true).read(true).write(true).open(arch_path).context("failed to open the output file")?;
     let mut main_arch = tar::Builder::new(arch_file);
 
     let mut list_header = Header::new_gnu();
@@ -165,5 +165,103 @@ pub fn create_archive(arch_path: &Path, root_dir: &Path, choice: ChosenOptions) 
 
     main_arch.finish()?;
 
+    Ok(())
+}
+
+fn read_inner_archives(arch_path: &Path) -> Result<(Vec<u8>, Vec<u8>)> {
+    let file = File::open(arch_path).context("failed to open the archive")?;
+    let mut outer = tar::Archive::new(file);
+    let mut uncompressed = None;
+    let mut compressed = None;
+
+    for entry in outer.entries().context("failed to read the archive")? {
+        let mut entry = entry.context("failed to read an archive entry")?;
+        let name = entry.path()?.to_path_buf();
+        match name.to_string_lossy().as_ref() {
+            "uncompressed.tar" => {
+                let mut data = Vec::new();
+                entry.read_to_end(&mut data)?;
+                uncompressed = Some(data);
+            }
+            "compressed.tar.xz" => {
+                let mut data = Vec::new();
+                entry.read_to_end(&mut data)?;
+                compressed = Some(data);
+            }
+            _ => {}
+        }
+    }
+
+    if uncompressed.is_none() && compressed.is_none() {
+        bail!("archive does not contain any supported inner archives");
+    }
+    Ok((uncompressed.unwrap_or_default(), compressed.unwrap_or_default()))
+}
+
+fn selected(path: &Path, filters: &[PathBuf]) -> bool {
+    filters.is_empty() || filters.iter().any(|filter| path == filter || path.starts_with(filter))
+}
+
+fn read_file_list(arch_path: &Path) -> Result<Vec<PathBuf>> {
+    let file = File::open(arch_path).context("failed to open the archive")?;
+    let mut outer = tar::Archive::new(file);
+    for entry in outer.entries().context("failed to read the archive")? {
+        let mut entry = entry.context("failed to read an archive entry")?;
+        if entry.path()?.as_ref() == Path::new("files_list") {
+            let mut contents = String::new();
+            entry.read_to_string(&mut contents)?;
+            let mut paths = Vec::new();
+            for line in contents.lines() {
+                if line.is_empty() || line == "uncompressed" || line == "compressed" {
+                    continue;
+                }
+                let (path, _) = line
+                    .split_once('\t')
+                    .context("invalid files_list entry")?;
+                paths.push(PathBuf::from(path));
+            }
+            return Ok(paths);
+        }
+    }
+    bail!("archive does not contain files_list");
+}
+
+fn process_inner<R, F>(reader: R, filters: &[PathBuf], mut action: F) -> Result<()>
+where
+    R: Read,
+    F: for<'a> FnMut(&mut tar::Entry<'a, R>) -> Result<()>,
+{
+    let mut inner = tar::Archive::new(reader);
+    for entry in inner.entries().context("failed to read an inner archive")? {
+        let mut entry = entry.context("failed to read an inner archive entry")?;
+        if selected(&entry.path()?.to_path_buf(), filters) {
+            action(&mut entry)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn list_archive(arch_path: &Path, filters: &[PathBuf]) -> Result<()> {
+    for path in read_file_list(arch_path)? {
+        if selected(&path, filters) {
+            println!("{}", path.display());
+        }
+    }
+    Ok(())
+}
+
+pub fn extract_archive(arch_path: &Path, destination: &Path, filters: &[PathBuf]) -> Result<()> {
+    let (uncompressed, compressed) = read_inner_archives(arch_path)?;
+    fs::create_dir_all(destination).context("failed to create extraction directory")?;
+    process_inner(&uncompressed[..], filters, |entry| {
+        entry.unpack_in(destination).context("failed to extract an archive entry")?;
+        Ok(())
+    })?;
+    if !compressed.is_empty() {
+        process_inner(XzDecoder::new(&compressed[..]), filters, |entry| {
+            entry.unpack_in(destination).context("failed to extract an archive entry")?;
+            Ok(())
+        })?;
+    }
     Ok(())
 }

@@ -6,9 +6,32 @@ User choice will be stored in a state file and loaded on the next launches.
 
 ## Usage
 
-1. Launch the program `archiver <path to archive file> [dir to archive]`.
-2. Pick files to exclude/include/include and compress. Default is include and compress. Use the instructions on the screen.
-3. Wait till the archive is created.
+Create an archive from the current directory:
+
+```text
+archiver archive.tar
+```
+
+Create an archive from another directory:
+
+```text
+archiver archive.tar path/to/directory
+```
+
+Pick files to include or compress in the TUI. The default action is compress.
+
+The same utility can inspect and extract archives:
+
+```text
+archiver --list archive.tar
+archiver --list archive.tar path/to/file
+archiver --extract archive.tar
+archiver --extract --directory destination archive.tar path/to/file
+```
+
+With `--extract`, omitting paths extracts every file; supplying paths extracts
+only matching files and descendants. `--list` prints matching paths without
+extracting them.
 
 ## Limitations (TODO)
 
